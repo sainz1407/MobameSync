@@ -2,9 +2,15 @@
 
 # Importing Section
 import sys
+import os
+import time
+import logging
 sys.path.append('../')
 from database.config import *
 import main
+from urllib.parse import urlparse
+from pydub import AudioSegment
+import httpx
 
 # GLOBAL CONFIG SECTION
 apihelper.SESSION_TIME_TO_LIVE = 5 * 60
@@ -21,28 +27,40 @@ def message_sender_and_recorder(grup, servermsgdb, localmsgdb):
       for memberdb in membersdb:
         if servermessage['state'] == 'published':
           if servermessage['id'] not in localmsgid and servermessage['type'] == 'text' and servermessage['group_id'] == memberdb['id']:
-            mobamebot.send_message(chat_id=telechatid(), text=f"{servermessage['text'].replace('%%%',prefix).replace('％％％',prefix)}\n\n#{memberdb['name'].replace(' ','')}", disable_web_page_preview=True)
+            mobamebot.send_message(chat_id=telechatid(), text=f"{servermessage['text'].replace('%%%','Sainz ').replace('％％％','Sainz ')}\n\n#{memberdb['name'].replace(' ','')}", disable_web_page_preview=True)
             localmsgid.append(servermessage['id'])
           if servermessage['id'] not in localmsgid and servermessage['type'] == 'picture' and 'text' in servermessage and servermessage['group_id'] == memberdb['id']:
-            mobamebot.send_photo(chat_id=telechatid(), photo=servermessage['file'], caption=f"{servermessage['text'].replace('%%%',prefix).replace('％％％',prefix)}\n\n#{memberdb['name'].replace(' ','')}")
+            mobamebot.send_photo(chat_id=telechatid(), photo=servermessage['file'], caption=f"{servermessage['text'].replace('%%%','Sainz ').replace('％％％','Sainz ')}\n\n#{memberdb['name'].replace(' ','')}")
             localmsgid.append(servermessage['id'])
           if servermessage['id'] not in localmsgid and servermessage['type'] == 'picture' and 'text' not in servermessage and servermessage['group_id'] == memberdb['id']:
             mobamebot.send_photo(chat_id=telechatid(), photo=servermessage['file'], caption=f"#{memberdb['name'].replace(' ','')}")
             localmsgid.append(servermessage['id'])
           if servermessage['id'] not in localmsgid and servermessage['type'] == 'voice' and servermessage['group_id'] == memberdb['id']:
-            mobamebot.send_audio(chat_id=telechatid(), audio=servermessage['file'], caption=f"#{memberdb['name'].replace(' ','')}")
+            m4a_path = f"{ROOT_DIR}{tempdir}/{os.path.basename(servermessage['file'])}"
+            os.makedirs(os.path.dirname(m4a_path), exist_ok=True)
+            with open(m4a_path, 'wb') as f:
+              f.write(httpx.get(servermessage['file']).content)
+            mp3_path = m4a_path.replace('.m4a', '.mp3')
+            AudioSegment.from_file(m4a_path, format="m4a").export(mp3_path, format="mp3")
+            with open(mp3_path, 'rb') as audio:
+              mobamebot.send_audio(chat_id=telechatid(), audio=audio, caption=f"#{memberdb['name'].replace(' ','')}")
             localmsgid.append(servermessage['id'])
+            os.remove(m4a_path)
+            os.remove(mp3_path)
           if servermessage['id'] not in localmsgid and servermessage['type'] == 'video' and servermessage['group_id'] == memberdb['id']:
             requestvideo = httpx.get(url=servermessage['file'])
             if int(requestvideo.headers['content-length']) <= 18000000:
               mobamebot.send_video(chat_id=telechatid(), video=servermessage['file'], caption=f"#{memberdb['name'].replace(' ','')}")
               localmsgid.append(servermessage['id'])
             else:
-              videopath = f"{ROOT_DIR}{tempdir}/{os.path.basename(video.url.path)}"
+              parsed_url = urlparse(servermessage['file'])
+              filename = os.path.basename(parsed_url.path)
+              videopath = f"{ROOT_DIR}{tempdir}/{filename}"
+              os.makedirs(os.path.dirname(videopath), exist_ok=True)
               with open(videopath, 'wb') as tempvid:
-                tempvid.write(requestvideo.content)
+                  tempvid.write(requestvideo.content)
               time.sleep(5)
-              mobamebot.send_video(chat_id=telechatid(), video=open(videopath,'rb'), caption=f"#{memberdb['name'].replace(' ','')}")
+              mobamebot.send_video(chat_id=telechatid(), video=open(videopath,'rb'), caption=f"#{memberdb['name'].replace(' ','')}", timeout=60)
               localmsgid.append(servermessage['id'])
               os.remove(videopath)
     localmessage.seek(0)
@@ -360,7 +378,7 @@ def callback_option(call):
     main.Nogizaka.teleservice_updater()
     main.Sakurazaka.teleservice_updater()
     main.Hinatazaka.teleservice_updater()
-    mobamebot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text='Database Telah Diupdate\!', parse_mode="MarkdownV2")
+    mobamebot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text='Database Telah Diupdate', parse_mode="MarkdownV2")
     time.sleep(2)
     mobamebot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=configmessages, parse_mode="MarkdownV2", reply_markup=configkeyboard())
   if call.data == 'grouptoggleservice':
@@ -396,7 +414,15 @@ def callback_option(call):
 
 if __name__ == "__main__":
   logging.info(f"✨ Bot started at {WIB}")
-  mobamebot.infinity_polling(timeout=10, long_polling_timeout=5)
+  while True:
+        try:
+            mobamebot.infinity_polling(timeout=20, long_polling_timeout=10)
+        except KeyboardInterrupt:
+            logging.info("Bot stopped manually.")
+            break
+        except Exception as e:
+            logging.error(f"Infinity polling error: {e}")
+            time.sleep(5)
   
 # AVAILABLE COMMAND
 # start - Mulai Bot
