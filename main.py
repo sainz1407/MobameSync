@@ -230,7 +230,38 @@ class Main:
       asyncio.run(executor(Hinatazaka.update_access_token_in_headers, Hinatazaka.update_access_token_in_JSON, hinapastmessages))
       
   def stream_timelines(self, memlist, datelist=[YST]):
-    async def url_streamer(url, addtoken, refresher, tempmessages):
+    async def url_streamer(url, addtoken, refresher, tempmessages, retries=5):
+      attempt = 0
+      while attempt < retries:
+          try:
+              async with httpx.AsyncClient(timeout=60) as client:
+                  await asyncio.get_running_loop().run_in_executor(ThreadPoolExecutor(), addtoken, False)
+                  browser = await client.get(url, headers=self.headers)
+                  
+                  if browser.status_code == 200:
+                      messages = browser.json()['messages']
+                      for message in messages:
+                          if not any(message['id'] == tempmessage['id'] for tempmessage in tempmessages):
+                              tempmessages.append(message)
+                      return  # Keluar jika berhasil
+                  elif browser.status_code == 401:
+                      logging.error("401 Unauthorized. Refreshing token...")
+                      await asyncio.get_running_loop().run_in_executor(ThreadPoolExecutor(), refresher)
+                  elif browser.status_code == 429:
+                      logging.error("429 Too Many Requests. Waiting for rate limit reset...")
+                      time.sleep(300)
+                      await asyncio.get_running_loop().run_in_executor(ThreadPoolExecutor(), refresher)
+                  else:
+                      logging.error(f"Error {browser.status_code}: {browser.text}")
+                      break
+          except (httpx.ReadError, httpx.RequestError) as e:
+              attempt += 1
+              logging.warning(f"Attempt {attempt}/{retries} failed: {e}. Retrying...")
+              await asyncio.sleep(5)  # Tunggu sebelum retry
+          except Exception as e:
+              logging.error(f"Unexpected error: {e}")
+              break
+      logging.error("Max retries reached. Exiting url_streamer.")
       async with httpx.AsyncClient(timeout=60) as client:
         await asyncio.get_running_loop().run_in_executor(ThreadPoolExecutor(), addtoken, False)
         browser = await client.get(url, headers=self.headers)
