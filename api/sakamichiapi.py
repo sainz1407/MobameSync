@@ -33,7 +33,7 @@ TE              = 'deflate'
 
 NogiPlainHeaders = {
   'host'            : nogiApi,
-  'X-Talk-App-ID'   : 'jp.co.sonymusic.communication.nogizaka 2.2',
+  'X-Talk-App-ID'   : 'jp.co.sonymusic.communication.nogizaka 2.3',
   'user-agent'      : useragent,
   'connection'      : connection,
   'content-type'    : contenttype,
@@ -46,7 +46,7 @@ NogiPlainHeaders = {
 
 SakuPlainHeaders = {
   'host'            : sakuApi,
-  'X-Talk-App-ID'   : 'jp.co.sonymusic.communication.sakurazaka 2.2',
+  'X-Talk-App-ID'   : 'jp.co.sonymusic.communication.sakurazaka 2.3',
   'user-agent'      : useragent,
   'connection'      : connection,
   'content-type'    : contenttype,
@@ -59,7 +59,7 @@ SakuPlainHeaders = {
 
 HinaPlainHeaders = {
   'host'            : hinaApi,
-  'X-Talk-App-ID'   : 'jp.co.sonymusic.communication.hinatazaka 2.2',
+  'X-Talk-App-ID'   : 'jp.co.sonymusic.communication.hinatazaka 2.3',
   'user-agent'      : useragent,
   'connection'      : connection,
   'content-type'    : contenttype,
