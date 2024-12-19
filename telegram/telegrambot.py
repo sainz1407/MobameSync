@@ -36,14 +36,16 @@ def message_sender_and_recorder(grup, servermsgdb, localmsgdb):
             mobamebot.send_photo(chat_id=telechatid(), photo=servermessage['file'], caption=f"#{memberdb['name'].replace(' ','')}")
             localmsgid.append(servermessage['id'])
           if servermessage['id'] not in localmsgid and servermessage['type'] == 'voice' and servermessage['group_id'] == memberdb['id']:
-            m4a_path = f"{ROOT_DIR}{tempdir}/{os.path.basename(servermessage['file'])}"
+            parsed_url = urlparse(servermessage['file'])
+            filename = os.path.basename(parsed_url.path)
+            m4a_path = f"{ROOT_DIR}{tempdir}/{filename}"
+            mp3_path = m4a_path.replace('.m4a', '.mp3')
             os.makedirs(os.path.dirname(m4a_path), exist_ok=True)
             with open(m4a_path, 'wb') as f:
               f.write(httpx.get(servermessage['file']).content)
-            mp3_path = m4a_path.replace('.m4a', '.mp3')
             AudioSegment.from_file(m4a_path, format="m4a").export(mp3_path, format="mp3")
             with open(mp3_path, 'rb') as audio:
-              mobamebot.send_audio(chat_id=telechatid(), audio=audio, caption=f"#{memberdb['name'].replace(' ','')}")
+                mobamebot.send_audio(chat_id=telechatid(), audio=audio, caption=f"#{memberdb['name'].replace(' ','')}")
             localmsgid.append(servermessage['id'])
             os.remove(m4a_path)
             os.remove(mp3_path)
