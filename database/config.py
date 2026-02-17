@@ -328,15 +328,10 @@ Contoh :\n\
 aboutmessage ="\
 *MENGENAI BOT*\n\
 `Nama   : Miyumiyuland_bot\n\
-Versi  : 2.0.0`\n\
+Versi  : 2.0.2`\n\
 \n\
 *CHANGELOG*\n\
 \- Perubahan sintak dari\n\
 versi 1\.1\.2\n\
 \- Penambahan fungsi\n\
-Asynchronous\n\
-\n\
-*DEVELOPER*\n\
-`Nama   : HASHINAMI\n\
-Kontak : `[linktr\.ee](https://linktr\.ee/hashinami)"
-
+Asynchronous"
