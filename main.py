@@ -28,9 +28,15 @@ class Main:
     self.accesstoken   = accesstoken
     self.plainreftoken = plainreftoken
     self.groups        = groups
+
+  def _refresh_payload_from_config(self):
+    cfg = configfile()
+    plain_refresh_token = cfg['Sakamichi_App'][self.groups]['refresh_token']
+    return plain_refresh_token, {"refresh_token": plain_refresh_token}
   
   def update_access_token_in_JSON(self):
     if self.groups in sakamichigroups:
+      self.plainreftoken, self.refreshtoken = self._refresh_payload_from_config()
       if self.plainreftoken in nullvalue:
         logging.error(refreshtokenundefined.replace('%%%', self.groups))
       elif self.plainreftoken not in nullvalue:
@@ -44,6 +50,7 @@ class Main:
             json.dump(config, configfile, indent=2)
             configfile.truncate()
             logging.info(accesstokenupdated.replace('%%%', self.groups))
+          return 'ok'
         elif browser.status_code == 400:
           logging.error(refreshtokendenied.replace('%%%', self.groups))
           logging.error(remove_indent(f"\n \
@@ -52,6 +59,9 @@ class Main:
           {browser.status_code}\n \
           {browser.json()}\n \
           {'=' * scrwidth}"))
+          return 'stop'
+        else:
+          browser_errlog(browser)
           return 'stop'
 
   def update_access_token_in_headers(self, logger=True):
@@ -66,8 +76,8 @@ class Main:
           return
         else:
           logging.error(accesstokenundefined.replace('%%%', self.groups))
-      except Exception:
-        logging.error(f'{Exception}')
+      except Exception as e:
+        logging.error(f'Failed to add access token to headers ({self.groups}): {e}')
       
   def check_access_token(self):
     def check(addacc):
@@ -231,74 +241,55 @@ class Main:
       
   def stream_timelines(self, memlist, datelist=[YST]):
     async def url_streamer(url, addtoken, refresher, tempmessages, retries=5):
-      attempt = 0
-      while attempt < retries:
-          try:
-              async with httpx.AsyncClient(timeout=60) as client:
-                  await asyncio.get_running_loop().run_in_executor(ThreadPoolExecutor(), addtoken, False)
-                  browser = await client.get(url, headers=self.headers)
-                  
-                  if browser.status_code == 200:
-                      messages = browser.json()['messages']
-                      for message in messages:
-                          if not any(message['id'] == tempmessage['id'] for tempmessage in tempmessages):
-                              tempmessages.append(message)
-                      return  # Keluar jika berhasil
-                  elif browser.status_code == 401:
-                      logging.error("401 Unauthorized. Refreshing token...")
-                      await asyncio.get_running_loop().run_in_executor(ThreadPoolExecutor(), refresher)
-                  elif browser.status_code == 429:
-                      logging.error("429 Too Many Requests. Waiting for rate limit reset...")
-                      time.sleep(300)
-                      await asyncio.get_running_loop().run_in_executor(ThreadPoolExecutor(), refresher)
-                  else:
-                      logging.error(f"Error {browser.status_code}: {browser.text}")
-                      break
-          except (httpx.ReadError, httpx.RequestError) as e:
-              attempt += 1
-              logging.warning(f"Attempt {attempt}/{retries} failed: {e}. Retrying...")
-              await asyncio.sleep(5)  # Tunggu sebelum retry
-          except Exception as e:
-              logging.error(f"Unexpected error: {e}")
-              break
-      logging.error("Max retries reached. Exiting url_streamer.")
-      async with httpx.AsyncClient(timeout=60) as client:
-        await asyncio.get_running_loop().run_in_executor(ThreadPoolExecutor(), addtoken, False)
-        browser = await client.get(url, headers=self.headers)
-        if browser.status_code == 200:
-          messages = browser.json()['messages']
-          for message in messages:
-            if not any(message['id'] == tempmessage['id'] for tempmessage in tempmessages):
-              tempmessages.append(message)
-        elif browser.status_code == 401:
-          logging.error(remove_indent(f"\n \
-          {'=' * scrwidth}\n \
-          {browser.status_code}\n \
-          {browser.url}\n \
-          {browser.json()}\n \
-          {'=' * scrwidth}"))
-          await asyncio.get_running_loop().run_in_executor(ThreadPoolExecutor(), refresher)
-          await url_streamer(url, addtoken, refresher, tempmessages)
-        elif browser.status_code == 400:
-          logging.error(remove_indent(f"\n \
-          {'=' * scrwidth}\n \
-          {browser.status_code}\n \
-          {browser.url}\n \
-          {browser.json()}\n \
-          {'=' * scrwidth}"))
-          logging.error(remove_indent(f"\n \
-          CHECK YOUR REFRESH TOKEN!"))
-          return 
-        elif browser.status_code == 429:
-          logging.error(remove_indent(f"\n \
-          {'=' * scrwidth}\n \
-          {browser.status_code}\n \
-          {browser.url}\n \
-          {browser.json()}\n \
-          {'=' * scrwidth}"))
-          time.sleep(300)
-          await asyncio.get_running_loop().run_in_executor(ThreadPoolExecutor(), refresher)
-          await url_streamer(url, addtoken, refresher, tempmessages)
+      for attempt in range(1, retries + 1):
+        try:
+          async with httpx.AsyncClient(timeout=None) as client:
+            await asyncio.get_running_loop().run_in_executor(ThreadPoolExecutor(), addtoken, False)
+            browser = await client.get(url, headers=self.headers)
+
+          if browser.status_code == 200:
+            messages = browser.json()['messages']
+            before_count = len(tempmessages)
+            for message in messages:
+              if not any(message['id'] == tempmessage['id'] for tempmessage in tempmessages):
+                tempmessages.append(message)
+            added_count = len(tempmessages) - before_count
+            if added_count > 0:
+              logging.info(f"[{self.groups}] Added {added_count} timeline message(s) from {url.split('?')[0]}")
+            return True
+
+          if browser.status_code == 401:
+            logging.warning(f"[{self.groups}] 401 on attempt {attempt}/{retries}. Refreshing token...")
+            refresh_result = await asyncio.get_running_loop().run_in_executor(ThreadPoolExecutor(), refresher)
+            if refresh_result == 'stop':
+              logging.error(f"[{self.groups}] Refresh token invalid. Stop retry for {url.split('?')[0]}")
+              return False
+          elif browser.status_code == 404:
+            logging.warning(f"[{self.groups}] 404 timeline not found for {url.split('?')[0]}. Skipping this member.")
+            return False
+          elif browser.status_code == 429:
+            wait_seconds = min(300, 5 * attempt)
+            logging.warning(f"[{self.groups}] 429 on attempt {attempt}/{retries}. Waiting {wait_seconds}s")
+            await asyncio.sleep(wait_seconds)
+          elif browser.status_code == 400:
+            browser_errlog(browser)
+            logging.error(remove_indent(f"\n \
+            CHECK YOUR REFRESH TOKEN!"))
+            return False
+          else:
+            browser_errlog(browser)
+            logging.warning(f"[{self.groups}] Unexpected status {browser.status_code} on attempt {attempt}/{retries}")
+
+          await asyncio.sleep(1)
+        except (httpx.ReadError, httpx.RequestError) as e:
+          logging.warning(f"[{self.groups}] Network error attempt {attempt}/{retries}: {e}")
+          await asyncio.sleep(2)
+        except Exception as e:
+          logging.error(f"[{self.groups}] Unexpected url_streamer error for {url.split('?')[0]}: {e}")
+          return False
+
+      logging.error(f"[{self.groups}] Max retries reached for {url.split('?')[0]}")
+      return False
     async def executor(addtoken, refresher, tempmessages):
       tempmessages.clear()
       urls = await url_creator()
@@ -322,7 +313,7 @@ class Main:
       
   def custmessage_lister(self, memlist, datelist, logger=False, mode="terminal"):
     async def url_streamer(url, addtoken, refresher, tempmessages):
-      async with httpx.AsyncClient(timeout=60) as client:
+      async with httpx.AsyncClient(timeout=None) as client:
         await asyncio.get_running_loop().run_in_executor(ThreadPoolExecutor(), addtoken, False)
         browser = await client.get(url, headers=self.headers)
         if browser.status_code == 200:
